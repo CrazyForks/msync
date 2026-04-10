@@ -2,7 +2,7 @@
 
 import fs from 'fs'
 import path from 'path'
-import { execSync } from 'child_process'
+import { execSync, spawn } from 'child_process'
 import checkbox, { Separator } from '@inquirer/checkbox'
 import select from '@inquirer/select'
 
@@ -155,7 +155,7 @@ async function main() {
     for (const m of memories) {
       if (m.project !== lastProj) {
         lastProj = m.project
-        choices.push(new Separator(`── ${lastProj} ──`))
+        choices.push(new Separator(`\x1B[1m\x1B[36m${lastProj}\x1B[0m`))
       }
       choices.push({
         name: `[${m.type}]  ${m.name}`,
@@ -166,13 +166,18 @@ async function main() {
     }
 
     selected = await checkbox({
-      message: `Select memories to export (${memories.length} found)\n  ↑↓ navigate · space select · a all · i invert · ⏎ submit`,
-      instructions: false,
+      message: `Select memories to export (${memories.length} found)`,
       choices,
       pageSize: 20,
       theme: {
+        icon: {
+          cursor: '❯',
+          checked: `  \x1B[32m◉\x1B[0m`,
+          unchecked: '  ◯',
+        },
         style: {
-          answer: v => '\n' + v.split(', ').map(s => `  · ${s}`).join('\n')
+          answer: v => '\n' + v.split(', ').map(s => `  · ${s}`).join('\n'),
+          helpTip: v => '\n' + v
         }
       }
     })
@@ -196,21 +201,50 @@ async function main() {
     })
   }
 
-  console.log(`\nFormatting ${selected.length} memories with ${model}...\n`)
-
   const body = selected.map((m, i) =>
     `### Memory ${i + 1}: ${m.name} (${m.type}, project: ${m.project})\n\n${m.body}`
   ).join('\n\n---\n\n')
 
-  try {
-    const result = execSync(`claude -p --no-session-persistence --model ${model}`, {
-      input: PROMPT + body,
-      encoding: 'utf8',
-      maxBuffer: 10 * 1024 * 1024,
-      timeout: 120000
-    })
+  // Spinner while waiting for first output
+  const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+  let frame = 0
+  const spinner = setInterval(() => {
+    process.stdout.write(`\r\x1B[2m${frames[frame++ % frames.length]} Formatting ${selected.length} memories with ${model}...\x1B[0m`)
+  }, 80)
 
-    console.log(result)
+  try {
+    const result = await new Promise((resolve, reject) => {
+      const child = spawn('claude', [
+        '-p', '--no-session-persistence',
+        '--model', model,
+      ], { stdio: ['pipe', 'pipe', 'pipe'] })
+
+      let output = ''
+      let started = false
+
+      child.stdout.on('data', chunk => {
+        if (!started) {
+          clearInterval(spinner)
+          process.stdout.write('\r\x1B[2K\n')
+          started = true
+        }
+        const text = chunk.toString()
+        output += text
+        process.stdout.write(text)
+      })
+
+      let stderr = ''
+      child.stderr.on('data', chunk => { stderr += chunk.toString() })
+
+      child.on('close', code => {
+        if (code !== 0) reject(new Error(stderr || `claude exited with code ${code}`))
+        else resolve(output)
+      })
+
+      child.on('error', reject)
+      child.stdin.write(PROMPT + body)
+      child.stdin.end()
+    })
 
     if (exportPath) {
       const resolved = path.resolve(exportPath)
@@ -219,12 +253,14 @@ async function main() {
     } else {
       try {
         execSync('pbcopy', { input: result })
-        console.log('\n✓ Copied to clipboard.')
+        console.log('\n\n✓ Copied to clipboard.')
       } catch {
         // non-macOS, skip
       }
     }
   } catch (err) {
+    clearInterval(spinner)
+    process.stdout.write('\r\x1B[2K')
     console.error('Claude error:', err.message)
     process.exit(1)
   }
