@@ -217,26 +217,42 @@ async function main() {
       const child = spawn('claude', [
         '-p', '--no-session-persistence',
         '--model', model,
+        '--output-format', 'stream-json',
+        '--include-partial-messages',
+        '--verbose',
       ], { stdio: ['pipe', 'pipe', 'pipe'] })
 
       let output = ''
       let started = false
+      let buf = ''
 
       child.stdout.on('data', chunk => {
-        if (!started) {
-          clearInterval(spinner)
-          process.stdout.write('\r\x1B[2K\n')
-          started = true
+        buf += chunk.toString()
+        const lines = buf.split('\n')
+        buf = lines.pop()
+        for (const line of lines) {
+          if (!line) continue
+          try {
+            const evt = JSON.parse(line)
+            if (evt.type === 'stream_event' && evt.event?.delta?.type === 'text_delta') {
+              if (!started) {
+                clearInterval(spinner)
+                process.stdout.write('\r\x1B[2K\n')
+                started = true
+              }
+              const text = evt.event.delta.text
+              output += text
+              process.stdout.write(text)
+            }
+          } catch {}
         }
-        const text = chunk.toString()
-        output += text
-        process.stdout.write(text)
       })
 
       let stderr = ''
       child.stderr.on('data', chunk => { stderr += chunk.toString() })
 
       child.on('close', code => {
+        if (!started) { clearInterval(spinner); process.stdout.write('\r\x1B[2K') }
         if (code !== 0) reject(new Error(stderr || `claude exited with code ${code}`))
         else resolve(output)
       })
