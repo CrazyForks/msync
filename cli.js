@@ -70,7 +70,7 @@ Your task: merge and deduplicate them into a single, clean memory document that 
    - **Preferences**: Opinions, tastes, working style
 4. Within each section, one entry per line, sorted oldest first
 5. Format: \`[YYYY-MM-DD] - content\` (use \`[unknown]\` if no date)
-6. Wrap entire output in a code block
+6. Output plain text directly, do NOT wrap in code blocks or markdown fences
 
 ---
 
