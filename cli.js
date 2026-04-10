@@ -41,14 +41,14 @@ const modelId = modelArg ? (MODEL_MAP[modelArg] || modelArg) : MODEL_MAP.sonnet
 
 if (args.includes('--help') || args.includes('-h')) {
   console.log(`
-  memory-sync — Sync Claude Code memories
+  msync — Sync Claude Code memories
 
   Usage:
-    memory-sync              Interactive select → format → clipboard
-    memory-sync --list       List all memories
-    memory-sync --all        Select all → format → clipboard
-    memory-sync --export <f> Export to file
-    memory-sync --model <m>  Model: sonnet(default), opus, haiku
+    msync              Interactive select → format → clipboard
+    msync --list       List all memories
+    msync --all        Select all → format → clipboard
+    msync --export <f> Export to file
+    msync --model <m>  Model: sonnet(default), opus, haiku
   `)
   process.exit(0)
 }
