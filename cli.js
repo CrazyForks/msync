@@ -100,27 +100,83 @@ function projectName(dirName) {
   return rel.split('/').slice(-2).join('/')
 }
 
+function projectDirFromKey(dirName) {
+  return '/' + dirName.replace(/^-/, '').replace(/-/g, '/')
+}
+
+function readSettings() {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(HOME, '.claude', 'settings.json'), 'utf8'))
+  } catch { return {} }
+}
+
+/** Scan a single directory for .md memory files */
+function scanMdDir(dir, project) {
+  if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return []
+  const results = []
+  for (const f of fs.readdirSync(dir)) {
+    if (!f.endsWith('.md') || f.startsWith('.')) continue
+    const content = fs.readFileSync(path.join(dir, f), 'utf8')
+    const { meta, body } = parseFrontmatter(content)
+    if (!body) continue
+    results.push({
+      project,
+      file: f,
+      name: meta.name || f.replace('.md', ''),
+      type: meta.type || (f === 'MEMORY.md' ? 'index' : 'unknown'),
+      description: meta.description || '',
+      body
+    })
+  }
+  return results
+}
+
+/** Scan an agent-memory base dir (contains subdirs per agent) */
+function scanAgentMemoryDir(baseDir, projectLabel) {
+  if (!fs.existsSync(baseDir) || !fs.statSync(baseDir).isDirectory()) return []
+  const results = []
+  for (const agent of fs.readdirSync(baseDir)) {
+    const agentDir = path.join(baseDir, agent)
+    try { if (!fs.statSync(agentDir).isDirectory()) continue } catch { continue }
+    const label = projectLabel ? `${projectLabel} › agent:${agent}` : `agent:${agent}`
+    results.push(...scanMdDir(agentDir, label))
+  }
+  return results
+}
+
 function scanMemories() {
-  if (!fs.existsSync(PROJECTS_DIR)) return []
   const memories = []
-  for (const proj of fs.readdirSync(PROJECTS_DIR)) {
-    const dir = path.join(PROJECTS_DIR, proj, 'memory')
-    if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) continue
-    for (const f of fs.readdirSync(dir)) {
-      if (!f.endsWith('.md') || f === 'MEMORY.md' || f.startsWith('.')) continue
-      const content = fs.readFileSync(path.join(dir, f), 'utf8')
-      const { meta, body } = parseFrontmatter(content)
-      if (!body) continue
-      memories.push({
-        project: projectName(proj),
-        file: f,
-        name: meta.name || f.replace('.md', ''),
-        type: meta.type || 'unknown',
-        description: meta.description || '',
-        body
-      })
+  const settings = readSettings()
+
+  // 1. Project auto memory (including MEMORY.md)
+  if (fs.existsSync(PROJECTS_DIR)) {
+    for (const proj of fs.readdirSync(PROJECTS_DIR)) {
+      const projLabel = projectName(proj)
+      const memDir = path.join(PROJECTS_DIR, proj, 'memory')
+      memories.push(...scanMdDir(memDir, projLabel))
+
+      // 2. Project-scope & local-scope subagent memories
+      const projPath = projectDirFromKey(proj)
+      memories.push(...scanAgentMemoryDir(
+        path.join(projPath, '.claude', 'agent-memory'), projLabel
+      ))
+      memories.push(...scanAgentMemoryDir(
+        path.join(projPath, '.claude', 'agent-memory-local'), projLabel
+      ))
     }
   }
+
+  // 3. User-scope subagent memories
+  memories.push(...scanAgentMemoryDir(path.join(HOME, '.claude', 'agent-memory'), null))
+
+  // 4. autoMemoryDirectory from settings
+  if (settings.autoMemoryDirectory) {
+    const customDir = settings.autoMemoryDirectory.startsWith('/')
+      ? settings.autoMemoryDirectory
+      : path.join(HOME, settings.autoMemoryDirectory)
+    memories.push(...scanMdDir(customDir, 'custom-memory'))
+  }
+
   return memories
 }
 

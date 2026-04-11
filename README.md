@@ -23,11 +23,23 @@ msync --model opus       # Specify model (sonnet/opus/haiku)
 
 ## How it works
 
-1. Scans `~/.claude/projects/*/memory/*.md` for all stored memories
+1. Scans all Claude Code auto-generated memory locations (see below)
 2. Interactive multi-select picker (all selected by default)
 3. Calls local Claude CLI with a memory migration prompt to deduplicate and categorize
 4. Copies result to clipboard
 5. Go to [claude.ai/settings/capabilities](https://claude.ai/settings/capabilities), click **Start Import**, paste the result to sync
+
+### Scanned locations
+
+| Source | Location |
+|--------|----------|
+| Project auto memory | `~/.claude/projects/*/memory/*.md` (including `MEMORY.md` index) |
+| Subagent memory (user scope) | `~/.claude/agent-memory/*/*.md` |
+| Subagent memory (project scope) | `<project>/.claude/agent-memory/*/*.md` |
+| Subagent memory (local scope) | `<project>/.claude/agent-memory-local/*/*.md` |
+| Custom memory directory | Via `autoMemoryDirectory` in `~/.claude/settings.json` |
+
+Only auto-generated memory is included. User-authored files (`CLAUDE.md`, `AGENTS.md`, etc.) are never scanned.
 
 ## Example output
 
